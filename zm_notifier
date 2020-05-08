@@ -4,7 +4,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 import subprocess
-import ConfigParser
+import configparser
 from copy import copy
 import zm_util
 from zm_api import ZMAPI
@@ -20,11 +20,12 @@ def notify_new_event(addr, monitor, msg_file, img_file, img_url,
     obj_string = ""
     if detected_objects is not None:
         for obj in detected_objects:
-            for key, value in obj.iteritems():
+            for key, value in obj.items():
                 obj_string += "{:s}: {:.0f}%\n".format(key, value*100.)
         obj_string.rstrip('\n')
 
-    message = "Motion detected by {:s}.\n".format(monitor['name'])
+    message = "Motion detected by {}.\n".format(monitor['name'])
+#    message = "Motion detected by {:s}.\n".format(monitor['name'])
     message += "Event {:d}\n".format(monitor['last_eventid'])
     if len(obj_string) > 0:
         message += obj_string
@@ -44,23 +45,23 @@ def notify_new_event(addr, monitor, msg_file, img_file, img_url,
     # Send message
 
     try:
-        stdin_file = open(msg_file)
+        stdin_file = open(msg_file, 'rb')
     except IOError:
         zm_util.debug("Cannot open {:s}.\n".format(msg_file), "stderr")
         return
     if addr['mms']:
-        subprocess.call(['mutt', '-s', subject, '-a', img_file, "--",
-                        addr["address"]], stdin=stdin_file)
+        command = subprocess.Popen(["mutt", "-s", subject, addr["address"], "-a", img_file], stdin=stdin_file,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        stdout, stderr = command.communicate()
     else:
-        subprocess.call(['mutt', '-s', subject, addr["address"]],
-                        stdin=stdin_file)
+        command = subprocess.Popen(["mutt", "-s", subject, addr["address"]], stdin=stdin_file,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        stdout, stderr = command.communicate()
     stdin_file.close()
 
 if __name__ == "__main__":
 
     # Read config file
 
-    config = ConfigParser.ConfigParser()
+    config = configparser.ConfigParser()
     config_file = '/etc/zm_notifier.cfg'
     try:
         f = open(config_file)
@@ -208,7 +209,7 @@ if __name__ == "__main__":
             if rebuild_monitors:
                 rebuild_monitors = False
                 monitors = zm.getMonitors(active_only=True)
-
+                print(monitors)
                 # Get last event information for each monitor
 
                 for monitor in monitors:

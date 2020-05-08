@@ -100,10 +100,10 @@ class ZMAPI:
                 if active_only:
                     if self.getMonitorDaemonStatus(monitor['id']):
                         monitors.append(monitor)
-                        self.debug(1, "Appended monitor {:d}: {:s}"\
-                                   .format(monitor['id'], monitor['name']))
+                        self.debug(1, "Appended monitor "\
+                               .format(monitor['id'], monitor['name']))
                 else:
-                    self.debug(1, "Appended monitor {:d}: {:s}"\
+                    self.debug(1, "Appended monitor "\
                                .format(monitor['id'], monitor['name']))
                     monitors.append(monitor)
         else:
@@ -125,7 +125,7 @@ class ZMAPI:
             status = data['status']
             statustext = data['statustext'].encode('ascii')
             if (not status) or \
-               statustext.startswith('Unable to connect'):
+               statustext.startswith(b'Unable to connect'):
                 return False
             else:
                 return True
@@ -171,7 +171,8 @@ class ZMAPI:
                     ID = int(event['Event']['Id'])
                     time = event['Event']['StartTime']
                     if time is not None:
-                        time_obj = datetime.strptime(time.encode('ascii'),
+#                        time_obj = datetime.strptime(time.encode('ascii'),
+                        time_obj = datetime.strptime(time,
                                                      '%Y-%m-%d %H:%M:%S')
                         if time_obj > latest_eventtime:
                             latest_eventtime = time_obj
@@ -203,7 +204,7 @@ class ZMAPI:
         # will try max_attempts times, pausing for 1 second in between each try.
 
         frame_url = self.getFrameURL(frameid)
-
+        print(frame_url)
         attempt = 1
         while attempt <= max_attempts:
             response = requests.get(url=frame_url, cookies=self._cookies,
@@ -225,7 +226,7 @@ class ZMAPI:
                 return True
             else:
                 attempt += 1
-                time.sleep(1)
+                time.sleep(5)
 
         self.debug(1, "Connection error in getFrameImage", "stderr")
         return False
