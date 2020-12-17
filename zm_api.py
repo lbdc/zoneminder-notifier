@@ -11,6 +11,7 @@ import urllib3
 urllib3.disable_warnings()  # Disable warnings about unverified SSL. The server
                             # uses my own self-signed certificate.
 import zm_util
+import json
 
 class ZMAPI:
 
@@ -20,7 +21,6 @@ class ZMAPI:
         self._username = username
         self._password = password
         self._verify_ssl = verify_ssl
-        self._cookies = None
         self._debug_level = debug_level
 
     def debug(self, level, message, pipe="stdout"):
@@ -35,19 +35,13 @@ class ZMAPI:
         login_url = self._server + "/zm/api/host/login.json"
         response = requests.post(url=login_url, data=login_post,
                                  verify=self._verify_ssl)
-        self._cookies = response.cookies
-
-        # Check if login was successful (note request above returns request.ok
-        # even if the wrong username and password were supplied)
-
-        version_url = self._server + '/zm/api/host/getVersion.json'
-        response = requests.get(url=version_url, cookies=self._cookies,
-                                verify=self._verify_ssl)
-        if not response.ok:
-            self.debug(1, "Error logging into ZoneMinder", "stderr")
-            return False
-        else:
+        if response.ok:
+            self._auth_token = response.json()["access_token"]
             return True
+        else:
+            self.debug(1, "Error logging into ZoneMinder", "stderr")
+            print(version_url)
+            return False
 
     def logout(self):
         # Logs out and returns True if successful, False otherwise
@@ -63,8 +57,9 @@ class ZMAPI:
     def getDaemonStatus(self):
         # Returns True if ZoneMinder is running, False if not or on error
 
-        daemon_url = self._server + "/zm/api/host/daemonCheck.json"
-        response = requests.get(url=daemon_url, cookies = self._cookies,
+        token_url_suffix = "?token=" + self._auth_token
+        daemon_url = self._server + "/zm/api/host/daemonCheck.json" + token_url_suffix
+        response = requests.get(url=daemon_url, data=None,
                                 verify=self._verify_ssl)
 
         if response.ok:
@@ -81,10 +76,10 @@ class ZMAPI:
         # name. If you only want active monitors, use active_only=True.
         # Monitor list will be empty if connection error occurs.
 
-        monitors_url = self._server + "/zm/api/monitors.json"
-        response = requests.get(url=monitors_url, cookies=self._cookies,
+        token_url_suffix = "?token=" + self._auth_token
+        monitors_url = self._server + "/zm/api/monitors.json" + token_url_suffix
+        response = requests.get(url=monitors_url, data=None,
                                 verify=self._verify_ssl)
-
         monitors = []
         if response.ok:
             data = response.json()
@@ -92,7 +87,7 @@ class ZMAPI:
                 monitor = {}
                 try:
                     monitor['id'] = int(item['Monitor_Status']['MonitorId'])
-                    monitor['name'] = item['Monitor']['Name'].encode('ascii')
+                    monitor['name'] = item['Monitor']['Name'].encode('ascii').decode('utf-8')
                 except TypeError:
                     self.debug(1, "No data available for new monitor. " +
                                "Skipping.")
@@ -100,10 +95,10 @@ class ZMAPI:
                 if active_only:
                     if self.getMonitorDaemonStatus(monitor['id']):
                         monitors.append(monitor)
-                        self.debug(1, "Appended monitor "\
+                        self.debug(1, "Appended monitor {} {}"\
                                .format(monitor['id'], monitor['name']))
                 else:
-                    self.debug(1, "Appended monitor "\
+                    self.debug(1, "Appended monitor {} {}"\
                                .format(monitor['id'], monitor['name']))
                     monitors.append(monitor)
         else:
@@ -114,10 +109,11 @@ class ZMAPI:
         # Returns True if daemon is running for monitor, False if not or if
         # there is a connection error
 
+        token_url_suffix = "?token=" + self._auth_token
         monitor_url = self._server \
                     + "/zm/api/monitors/daemonStatus/id:{:d}/daemon:zmc.json" \
-                      .format(monitorID)
-        response = requests.get(url=monitor_url, cookies=self._cookies,
+                      .format(monitorID) + token_url_suffix
+        response = requests.get(url=monitor_url, data=None,
                                 verify=self._verify_ssl)
 
         if response.ok:
@@ -141,12 +137,12 @@ class ZMAPI:
 
         # First need to determine the number of pages
 
+        login_token = {'token': self._auth_token}
         monitor_url = self._server \
-                    + "/zm/api/events/index/MonitorID:{:d}.json?page=1"\
+                    + "/zm/api/events/index/MonitorID:{:d}.json"\
                       .format(monitorID)
-        response = requests.get(url=monitor_url, cookies=self._cookies,
+        response = requests.post(url=monitor_url, data=login_token,
                                 verify=self._verify_ssl)
-
         latest_eventid = 0
         maxscore_frameid = 0
         if not response.ok:
@@ -163,7 +159,7 @@ class ZMAPI:
             monitor_url = self._server \
                         + "/zm/api/events/index/MonitorID:{:d}.json?page={:d}"\
                           .format(monitorID, i)
-            response = requests.get(url=monitor_url, cookies=self._cookies,
+            response = requests.post(url=monitor_url, data=login_token,
                                     verify=self._verify_ssl)
             data = response.json()
             try:
@@ -182,21 +178,24 @@ class ZMAPI:
             except KeyError:
                 self.debug(1, "No events list present", "stderr")
                 continue
-
+        print(str(latest_eventid) + " -- " + str(maxscore_frameid))
         return latest_eventid, maxscore_frameid
 
     def getMaxScoreURL(self, eventid):
         # Returns url for max score frame in a given event
 
+        token_url_suffix = "?token=" + self._auth_token
         return self._server \
-               + "/zm/index.php?view=frame&eid={:d}&fid=0".format(eventid)
+               + "/zm/index.php?view=frame&eid={:d}&fid=0".format(eventid) \
+               + token_url_suffix
 
     def getFrameURL(self, frameid):
         # Returns url for the image specified by the given frameid
 
+        token_url_suffix = "?token=" + self._auth_token
         return self._server \
                + "/zm/index.php?view=image&fid={:d}&eid=&show=capture" \
-                 .format(frameid)
+                 .format(frameid) + token_url_suffix
 
     def getFrameImage(self, frameid, output_filename, max_attempts=5):
         # Downloads image specified by frameid to the given filename. Returns
